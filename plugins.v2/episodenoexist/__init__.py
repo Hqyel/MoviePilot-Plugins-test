@@ -447,7 +447,10 @@ class EpisodeNoExist(_PluginBase):
                     logger.debug("未获取到Library ID, 跳过获取缺失集数")
                     continue
 
+                logger.info(f"开始调用API获取媒体库items: {library.name}")
                 library_items = self._msChain.items(mediaserver, library.id)
+                logger.info(f"媒体库items获取完成，数量: {len(library_items) if library_items else 0}")
+                
                 if not library_items:
                     logger.debug("未获取到媒体库items信息, 跳过获取缺失集数")
                     continue
@@ -859,6 +862,7 @@ class EpisodeNoExist(_PluginBase):
             "enabled": self._enabled,
             "cron": self._cron,
             "onlyonce": self._onlyonce,
+            "scan_days": self._scan_days,
             "clear": self._clear,
             "only_season_exist": self._only_season_exist,
             "history_type": self._history_type,
