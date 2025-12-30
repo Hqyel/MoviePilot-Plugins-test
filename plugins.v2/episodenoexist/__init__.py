@@ -472,31 +472,32 @@ class EpisodeNoExist(_PluginBase):
                     )
 
                     item_unique_flag = f"{mediaserver}_{item.library}_{item.item_id}_{item_title}"
-
+                    if self._scan_days > 0:
+                        logger.info(f"{ietm}")
                     # 检查入库时间
-                    _date_added = getattr(item, "date_added", None)
-                    if self._scan_days > 0 and _date_added:
-                        try:
-                            # 尝试解析日期，常见格式 YYYY-MM-DD HH:MM:SS
-                            item_date_str = str(_date_added)
-                            if "T" in item_date_str:
-                                # ISO 格式处理
-                                item_date = datetime.datetime.fromisoformat(item_date_str.replace("Z", "+00:00"))
-                            else:
-                                item_date = datetime.datetime.strptime(item_date_str, "%Y-%m-%d %H:%M:%S")
+                    # _date_added = getattr(item, "date_added", None)
+                    # if self._scan_days > 0 and _date_added:
+                    #     try:
+                    #         # 尝试解析日期，常见格式 YYYY-MM-DD HH:MM:SS
+                    #         item_date_str = str(_date_added)
+                    #         if "T" in item_date_str:
+                    #             # ISO 格式处理
+                    #             item_date = datetime.datetime.fromisoformat(item_date_str.replace("Z", "+00:00"))
+                    #         else:
+                    #             item_date = datetime.datetime.strptime(item_date_str, "%Y-%m-%d %H:%M:%S")
 
-                            # 时区处理
-                            current_tz = pytz.timezone(settings.TZ)
-                            if item_date.tzinfo is None:
-                                item_date = current_tz.localize(item_date)
+                    #         # 时区处理
+                    #         current_tz = pytz.timezone(settings.TZ)
+                    #         if item_date.tzinfo is None:
+                    #             item_date = current_tz.localize(item_date)
                             
-                            now = datetime.datetime.now(tz=current_tz)
+                    #         now = datetime.datetime.now(tz=current_tz)
                             
-                            if (now - item_date).days > self._scan_days:
-                                logger.info(f"【{item_title}】入库时间超过 {self._scan_days} 天, 跳过")
-                                continue
-                        except Exception as e:
-                            logger.debug(f"【{item_title}】入库时间解析失败: {e}")
+                    #         if (now - item_date).days > self._scan_days:
+                    #             logger.info(f"【{item_title}】入库时间超过 {self._scan_days} 天, 跳过")
+                    #             continue
+                    #     except Exception as e:
+                    #         logger.debug(f"【{item_title}】入库时间解析失败: {e}")
 
                     if item_unique_flag in item_unique_flags:
                         logger.info(f"【{item_title}】已处理过, 跳过")
