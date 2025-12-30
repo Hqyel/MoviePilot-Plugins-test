@@ -470,36 +470,7 @@ class EpisodeNoExist(_PluginBase):
                         or item.original_title
                         or f"ItemID: {item.item_id}"
                     )
-                    logger.info(f"bbbbbbbbbbb")
                     item_unique_flag = f"{mediaserver}_{item.library}_{item.item_id}_{item_title}"
-                    if self._scan_days > 0:
-                        logger.info(f"aaaaaaaaaaaaa")
-                    # 检查入库时间
-                    logger.info(f"ddddddddddd")
-                    _date_added = getattr(item, "date_added", None)
-                    logger.info(f"ccccccccccc")
-                    if self._scan_days > 0 and _date_added:
-                        try:
-                            # 尝试解析日期，常见格式 YYYY-MM-DD HH:MM:SS
-                            item_date_str = str(_date_added)
-                            if "T" in item_date_str:
-                                # ISO 格式处理
-                                item_date = datetime.datetime.fromisoformat(item_date_str.replace("Z", "+00:00"))
-                            else:
-                                item_date = datetime.datetime.strptime(item_date_str, "%Y-%m-%d %H:%M:%S")
-
-                            # 时区处理
-                            current_tz = pytz.timezone(settings.TZ)
-                            if item_date.tzinfo is None:
-                                item_date = current_tz.localize(item_date)
-                            
-                            now = datetime.datetime.now(tz=current_tz)
-                            
-                            if (now - item_date).days > self._scan_days:
-                                logger.info(f"【{item_title}】入库时间超过 {self._scan_days} 天, 跳过")
-                                continue
-                        except Exception as e:
-                            logger.debug(f"【{item_title}】入库时间解析失败: {e}")
 
                     if item_unique_flag in item_unique_flags:
                         logger.info(f"【{item_title}】已处理过, 跳过")
@@ -546,6 +517,25 @@ class EpisodeNoExist(_PluginBase):
                     )
 
                     if is_add_subscribe_success and tv_no_exist_info:
+                        # 检查最后播出时间
+                        if self._scan_days > 0 and tv_no_exist_info.get("last_air_date"):
+                            try:
+                                last_air_date_str = str(tv_no_exist_info.get("last_air_date"))
+                                if last_air_date_str != "未知":
+                                    last_air_date = datetime.datetime.strptime(last_air_date_str, "%Y-%m-%d")
+                                    # 时区处理
+                                    current_tz = pytz.timezone(settings.TZ)
+                                    if last_air_date.tzinfo is None:
+                                        last_air_date = current_tz.localize(last_air_date)
+                                    
+                                    now = datetime.datetime.now(tz=current_tz)
+                                    
+                                    if (now - last_air_date).days > self._scan_days:
+                                        logger.info(f"【{item_title}】最后播出时间 {last_air_date_str} 超过 {self._scan_days} 天, 跳过")
+                                        continue
+                            except Exception as e:
+                                logger.debug(f"【{item_title}】最后播出时间解析失败: {e}")
+
                         if not tv_no_exist_info[
                             "season_episode_no_exist_info"
                         ]:
