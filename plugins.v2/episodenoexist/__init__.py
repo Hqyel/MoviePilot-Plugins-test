@@ -470,10 +470,10 @@ class EpisodeNoExist(_PluginBase):
                         or item.original_title
                         or f"ItemID: {item.item_id}"
                     )
-
+                    logger.info(f"bbbbbbbbbbb")
                     item_unique_flag = f"{mediaserver}_{item.library}_{item.item_id}_{item_title}"
                     if self._scan_days > 0:
-                        logger.info(f"{ietm}")
+                        logger.info(f"aaaaaaaaaaaaa")
                     # 检查入库时间
                     # _date_added = getattr(item, "date_added", None)
                     # if self._scan_days > 0 and _date_added:
