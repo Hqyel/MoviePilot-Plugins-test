@@ -439,7 +439,7 @@ class EpisodeNoExist(_PluginBase):
                 if library.name not in self._whitelist_librarys:
                     continue
                 logger.info(
-                    f"正在获取 {mediaserver} 媒体库 {library.name} ..."
+                    f"正在获取aaa {mediaserver} 媒体库 {library.name} ..."
                 )
                 logger.debug(f"library.id: {library.id}")
 
