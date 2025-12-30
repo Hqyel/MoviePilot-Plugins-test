@@ -526,8 +526,8 @@ class EpisodeNoExist(_PluginBase):
                             self._msChain.episodes(mediaserver, item.item_id)
                             or []
                         )
-                        logger.debug(
-                            f"获取到媒体库【{item_title}】季集信息:{espisodes_info}"
+                        logger.info(
+                            f"获取到媒体库【{item_title}】季集信息, 第一集详情: {espisodes_info[0].dict() if espisodes_info else '无集数'}"
                         )
                         for episode_info in espisodes_info:
                             seasoninfo[episode_info.season] = (
