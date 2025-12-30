@@ -175,7 +175,6 @@ class EpisodeNoExist(_PluginBase):
     _enabled: bool = False
     _cron: str = ""
     _onlyonce: bool = False
-    _scan_days: int = 0
     _clear: bool = False
     _clearflag: bool = False
 
@@ -206,7 +205,6 @@ class EpisodeNoExist(_PluginBase):
             )
 
             self._clear = config.get("clear", False)
-            self._scan_days = int(config.get("scan_days", 0))
 
             self._only_season_exist = config.get("only_season_exist", True)
 
@@ -447,10 +445,7 @@ class EpisodeNoExist(_PluginBase):
                     logger.debug("未获取到Library ID, 跳过获取缺失集数")
                     continue
 
-                logger.info(f"开始调用API获取媒体库items: {library.name}")
                 library_items = self._msChain.items(mediaserver, library.id)
-                logger.info(f"媒体库items获取完成，数量: {len(library_items) if library_items else 0}")
-                
                 if not library_items:
                     logger.debug("未获取到媒体库items信息, 跳过获取缺失集数")
                     continue
@@ -475,30 +470,6 @@ class EpisodeNoExist(_PluginBase):
                     )
 
                     item_unique_flag = f"{mediaserver}_{item.library}_{item.item_id}_{item_title}"
-
-                    # 检查入库时间
-                    if self._scan_days > 0 and item.date_added:
-                        try:
-                            # 尝试解析日期，常见格式 YYYY-MM-DD HH:MM:SS
-                            item_date_str = str(item.date_added)
-                            if "T" in item_date_str:
-                                # ISO 格式处理
-                                item_date = datetime.datetime.fromisoformat(item_date_str.replace("Z", "+00:00"))
-                            else:
-                                item_date = datetime.datetime.strptime(item_date_str, "%Y-%m-%d %H:%M:%S")
-
-                            # 时区处理
-                            current_tz = pytz.timezone(settings.TZ)
-                            if item_date.tzinfo is None:
-                                item_date = current_tz.localize(item_date)
-                            
-                            now = datetime.datetime.now(tz=current_tz)
-                            
-                            if (now - item_date).days > self._scan_days:
-                                logger.info(f"【{item_title}】入库时间超过 {self._scan_days} 天, 跳过")
-                                continue
-                        except Exception as e:
-                            logger.debug(f"【{item_title}】入库时间解析失败: {e}")
 
                     if item_unique_flag in item_unique_flags:
                         logger.info(f"【{item_title}】已处理过, 跳过")
@@ -862,7 +833,6 @@ class EpisodeNoExist(_PluginBase):
             "enabled": self._enabled,
             "cron": self._cron,
             "onlyonce": self._onlyonce,
-            "scan_days": self._scan_days,
             "clear": self._clear,
             "only_season_exist": self._only_season_exist,
             "history_type": self._history_type,
@@ -1226,25 +1196,6 @@ class EpisodeNoExist(_PluginBase):
                                     {
                                         "component": "VTextField",
                                         "props": {
-                                            "model": "scan_days",
-                                            "label": "入库时间限制(天)",
-                                            "placeholder": "0为不限制",
-                                        },
-                                    }
-                                ],
-                            },
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
                                             "model": "cron",
                                             "label": "执行周期",
                                             "placeholder": "5位cron表达式, 留空自动",
@@ -1386,7 +1337,6 @@ class EpisodeNoExist(_PluginBase):
             "enabled": False,
             "cron": "",
             "onlyonce": False,
-            "scan_days": 0,
             "only_season_exist": True,
             "clear": False,
             "history_type": HistoryDataType.LATEST.value,
