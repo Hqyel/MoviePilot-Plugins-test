@@ -474,10 +474,11 @@ class EpisodeNoExist(_PluginBase):
                     item_unique_flag = f"{mediaserver}_{item.library}_{item.item_id}_{item_title}"
 
                     # 检查入库时间
-                    if self._scan_days > 0 and item.date_added:
+                    _date_added = getattr(item, "date_added", None)
+                    if self._scan_days > 0 and _date_added:
                         try:
                             # 尝试解析日期，常见格式 YYYY-MM-DD HH:MM:SS
-                            item_date_str = str(item.date_added)
+                            item_date_str = str(_date_added)
                             if "T" in item_date_str:
                                 # ISO 格式处理
                                 item_date = datetime.datetime.fromisoformat(item_date_str.replace("Z", "+00:00"))
