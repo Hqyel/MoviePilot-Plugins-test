@@ -40,6 +40,7 @@ class HistoryDataType(Enum):
     ALL = "所有记录"
     LATEST = "最新6条记录"
     NOT_ALL_NO_EXIST = "已有季缺失"
+    MATCH_SCAN_DAYS = "时间范围内"
 
 
 class NoExistAction(Enum):
@@ -531,25 +532,45 @@ class EpisodeNoExist(_PluginBase):
                                     now = datetime.datetime.now(tz=current_tz)
                                     
                                     if (now - last_air_date).days > self._scan_days:
-                                        logger.info(f"【{item_title}】最后播出时间 {last_air_date_str} 超过 {self._scan_days} 天, 跳过")
+                                        logger.info(f"【{item_title}】最后播出时间 {last_air_date_str} 超过 {self._scan_days} 天, 标记为已完成并跳过")
+                                        __append_history(
+                                            item_unique_flag=item_unique_flag,
+                                            exist_status=HistoryStatus.ALL_EXIST,
+                                            tv_no_exist_info=tv_no_exist_info,
+                                        )
                                         continue
                             except Exception as e:
                                 logger.debug(f"【{item_title}】最后播出时间解析失败: {e}")
 
-                        if not tv_no_exist_info[
-                            "season_episode_no_exist_info"
-                        ]:
+                        # 判断是否需要写入历史
+                        # 逻辑：
+                        # 1. 老剧（超时）：前面已经处理并写入 ALL_EXIST
+                        # 2. 新剧（未超时）：
+                        #    - 如果剧集状态是 Ended/Canceled 且 无缺失（ALL_EXIST） -> 写入 history (以后不再扫)
+                        #    - 否则（连载中 或 有缺失） -> 不写入 history (留待下次扫描)
+                        
+                        _status = tv_no_exist_info.get("status", "Unknown")
+                        _is_ended = _status in ["Ended", "Canceled", "Miniseries", "Planned"] # 完结状态
+                        _is_all_exist = not tv_no_exist_info["season_episode_no_exist_info"]
+
+                        should_record = _is_ended and _is_all_exist
+
+                        if _is_all_exist:
                             logger.info(
-                                f"【{item_title}】所有季集均已存在/订阅"
+                                f"【{item_title}】所有季集均已存在/订阅 (状态: {_status})"
                             )
-                            __append_history(
-                                item_unique_flag=item_unique_flag,
-                                exist_status=HistoryStatus.ALL_EXIST,
-                                tv_no_exist_info=tv_no_exist_info,
-                            )
+                            if should_record:
+                                __append_history(
+                                    item_unique_flag=item_unique_flag,
+                                    exist_status=HistoryStatus.ALL_EXIST,
+                                    tv_no_exist_info=tv_no_exist_info,
+                                )
+                            else:
+                                logger.info(f"【{item_title}】虽无缺失但未完结/连载中, 跳过写入历史")
+
                         else:
                             logger.info(
-                                f"【{item_title}】缺失集数信息：{tv_no_exist_info}"
+                                f"【{item_title}】缺失集数信息：{tv_no_exist_info} (状态: {_status})"
                             )
 
                             if (
@@ -563,45 +584,62 @@ class EpisodeNoExist(_PluginBase):
                                     )
                                 )
                                 if is_add_subscribe_success:
-                                    __append_history(
-                                        item_unique_flag=item_unique_flag,
-                                        exist_status=HistoryStatus.ADDED_RSS,
-                                        tv_no_exist_info=tv_no_exist_info,
-                                    )
+                                    # 订阅成功，通常记录 ADDED_RSS。但根据要求，如果是连载中，也不记录?
+                                    # 用户：只有在...或剧集完结且无缺失，才添加到历史记录。
+                                    # 这意味着 ADDED_RSS (还在下) 也不记录。
+                                    if should_record:
+                                        __append_history(
+                                            item_unique_flag=item_unique_flag,
+                                            exist_status=HistoryStatus.ADDED_RSS,
+                                            tv_no_exist_info=tv_no_exist_info,
+                                        )
+                                    else:
+                                        logger.info(f"【{item_title}】已添加订阅但未完结/有缺失, 跳过写入历史")
                                 else:
                                     logger.warn(
                                         f"订阅【{item_title}】失败, 仅记录缺失集数"
                                     )
-                                    __append_history(
-                                        item_unique_flag=item_unique_flag,
-                                        exist_status=HistoryStatus.NO_EXIST,
-                                        tv_no_exist_info=tv_no_exist_info,
-                                    )
+                                    # 失败记录，也不记？为了重试
+                                    if should_record:
+                                         __append_history(
+                                            item_unique_flag=item_unique_flag,
+                                            exist_status=HistoryStatus.NO_EXIST,
+                                            tv_no_exist_info=tv_no_exist_info,
+                                        )
+                                    else:
+                                        logger.info(f"【{item_title}】订阅失败/未完结, 跳过写入历史")
+
                             elif (
                                 self._no_exist_action
                                 == NoExistAction.SET_ALL_EXIST.value
                             ):
                                 logger.debug("将缺失季集标记为存在")
-                                __append_history(
-                                    item_unique_flag=item_unique_flag,
-                                    exist_status=HistoryStatus.ALL_EXIST,
-                                    tv_no_exist_info=tv_no_exist_info,
-                                )
+                                # 强制标记存在，可能也需要遵循规则
+                                if should_record:
+                                    __append_history(
+                                        item_unique_flag=item_unique_flag,
+                                        exist_status=HistoryStatus.ALL_EXIST,
+                                        tv_no_exist_info=tv_no_exist_info,
+                                    )
+                                else:
+                                    logger.info(f"【{item_title}】标记存在但未完结, 跳过写入历史")
 
                             else:
                                 logger.debug("仅记录缺失集数")
-                                __append_history(
-                                    item_unique_flag=item_unique_flag,
-                                    exist_status=HistoryStatus.NO_EXIST,
-                                    tv_no_exist_info=tv_no_exist_info,
-                                )
+                                if should_record:
+                                    __append_history(
+                                        item_unique_flag=item_unique_flag,
+                                        exist_status=HistoryStatus.NO_EXIST,
+                                        tv_no_exist_info=tv_no_exist_info,
+                                    )
+                                else:
+                                    logger.info(f"【{item_title}】仅记录缺失但未完结, 跳过写入历史")
                     else:
                         logger.warn(f"【{item_title}】获取缺失集数信息失败")
-                        __append_history(
-                            item_unique_flag=item_unique_flag,
-                            exist_status=HistoryStatus.FAILED,
-                            tv_no_exist_info=tv_no_exist_info,
-                        )
+                        # 获取失败依然记录 FAILED? 如果想重试，应该不记录。
+                        # 通常 FAILED 是 API 错误，最好不记录以便重试。
+                        logger.info(f"【{item_title}】获取失败, 跳过写入历史以便重试")
+
 
                 logger.info(
                     f"{mediaserver} 媒体库 {library.name} 获取数据完成"
@@ -689,6 +727,7 @@ class EpisodeNoExist(_PluginBase):
         )
 
         if tmdbinfo:
+            tv_no_exist_info["status"] = getattr(tmdbinfo, "status", "Unknown") 
             tv_no_exist_info["poster_path"] = (
                 tmdbinfo.poster_path
                 or tv_no_exist_info.get("poster_path", default_poster_path)
@@ -1275,6 +1314,10 @@ class EpisodeNoExist(_PluginBase):
                                                 {
                                                     "title": f"{HistoryDataType.ALL.value}",
                                                     "value": f"{HistoryDataType.ALL.value}",
+                                                },
+                                                {
+                                                    "title": f"{HistoryDataType.MATCH_SCAN_DAYS.value}",
+                                                    "value": f"{HistoryDataType.MATCH_SCAN_DAYS.value}",
                                                 },
                                             ],
                                         },
@@ -1945,6 +1988,26 @@ class EpisodeNoExist(_PluginBase):
 
         if self._history_type == HistoryDataType.NOT_ALL_NO_EXIST.value:
             historys_in_type = history_not_all_no_exist
+        elif self._history_type == HistoryDataType.MATCH_SCAN_DAYS.value:
+            historys_in_type = []
+            if self._scan_days == 0:
+                historys_in_type = history_all
+            else:
+                current_tz = pytz.timezone(settings.TZ)
+                now = datetime.datetime.now(tz=current_tz)
+                for history in history_all:
+                    tv_info = history.get("tv_no_exist_info", {})
+                    last_air = tv_info.get("last_air_date")
+                    if not last_air or last_air == "未知":
+                        continue
+                    try:
+                        last_air_date = datetime.datetime.strptime(str(last_air), "%Y-%m-%d")
+                        if last_air_date.tzinfo is None:
+                            last_air_date = current_tz.localize(last_air_date)
+                        if (now - last_air_date).days <= self._scan_days:
+                            historys_in_type.append(history)
+                    except Exception:
+                        continue
         else:
             historys_in_type = history_type_to_list.get(
                 self._history_type, history_all[:6]
