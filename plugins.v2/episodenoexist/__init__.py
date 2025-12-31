@@ -1,4 +1,5 @@
 from pathlib import Path
+import threading
 from threading import Event
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -478,7 +479,7 @@ class EpisodeNoExist(_PluginBase):
 
                     if item_unique_flag in item_unique_flags:
                         # 检查是否满足重扫条件
-                        # 1. 连载中 (Returning Series) 或 有缺失
+                        # 1. 连载中 (Returning Series) 或 有缺失 或 播出时间未知 (且非全部存在)
                         # 2. 如果开启强制重扫 -> 直接扫
                         # 3. 如果未开启 -> 需要在时间限制内
                         
@@ -491,15 +492,20 @@ class EpisodeNoExist(_PluginBase):
                             
                             is_active = (tmdb_status == "Returning Series")
                             is_missing = (exist_status in [HistoryStatus.NO_EXIST.value, HistoryStatus.ADDED_RSS.value]) or tv_info.get("season_episode_no_exist_info")
+                            last_air = tv_info.get("last_air_date")
+                            is_unknown_date = (str(last_air) == "未知")
                             
-                            if is_active or is_missing:
+                            if is_active or is_missing or (is_unknown_date and exist_status != HistoryStatus.ALL_EXIST.value):
                                 if self._force_scan_history:
                                     should_rescan = True
-                                    logger.info(f"【{item_title}】满足强制重扫条件 (连载/缺失)，继续扫描")
+                                    logger.info(f"【{item_title}】满足强制重扫条件 (连载/缺失/未知)，继续扫描")
                                 else:
                                     # 检查时间
-                                    last_air = tv_info.get("last_air_date")
-                                    if self._scan_days > 0 and last_air:
+                                    if is_unknown_date and exist_status != HistoryStatus.ALL_EXIST.value:
+                                         # 未知时间的剧集，如果不等于全部存在，则默认视为在范围内
+                                         should_rescan = True
+                                         logger.info(f"【{item_title}】播出时间未知且非全部存在，继续扫描")
+                                    elif self._scan_days > 0 and last_air:
                                         try:
                                             last_air_str = str(last_air)
                                             if last_air_str != "未知":
@@ -601,14 +607,23 @@ class EpisodeNoExist(_PluginBase):
                         _is_all_exist = not tv_no_exist_info["season_episode_no_exist_info"]
 
                         if _is_all_exist:
-                            logger.info(
-                                f"【{item_title}】所有季集均已存在/订阅 (状态: {_status})"
-                            )
-                            __append_history(
-                                item_unique_flag=item_unique_flag,
-                                exist_status=HistoryStatus.ALL_EXIST,
-                                tv_no_exist_info=tv_no_exist_info,
-                            )
+                            # 如果全部存在，但播出时间未知，记为 ADDED_RSS 这样它们会出现在 匹配时间范围 的 过滤里
+                            if str(tv_no_exist_info.get("last_air_date")) == "未知":
+                                logger.info(f"【{item_title}】虽集数齐全但播出时间未知，记录为 {HistoryStatus.ADDED_RSS.value}")
+                                __append_history(
+                                    item_unique_flag=item_unique_flag,
+                                    exist_status=HistoryStatus.ADDED_RSS,
+                                    tv_no_exist_info=tv_no_exist_info,
+                                )
+                            else:
+                                logger.info(
+                                    f"【{item_title}】所有季集均已存在/订阅 (状态: {_status})"
+                                )
+                                __append_history(
+                                    item_unique_flag=item_unique_flag,
+                                    exist_status=HistoryStatus.ALL_EXIST,
+                                    tv_no_exist_info=tv_no_exist_info,
+                                )
 
                         else:
                             logger.info(
@@ -998,6 +1013,18 @@ class EpisodeNoExist(_PluginBase):
         # 判断用户是否已经添加订阅
         if self._subOper.exists(tmdbid, None, season=season):
             logger.info(f"{title_season} 订阅已存在")
+            # 即使存在，也触发一次搜索下载
+            # 需要获取订阅ID
+            try:
+                subscribes = self._subOper.list()
+                target_sub = next((s for s in subscribes if s.tmdbid == tmdbid and s.season == season), None)
+                if target_sub:
+                    logger.info(f"触发已有订阅搜索: {title_season} (ID: {target_sub.id})")
+                    threading.Thread(target=self._subChain.search, args=(target_sub.id,), kwargs={'manual': True}).start()
+                else:
+                     logger.warn(f"未找到订阅对象 ID，无法触发搜索: {title_season}")
+            except Exception as e:
+                logger.error(f"触发已有订阅搜索失败: {e}")
             return True
 
         logger.info(f"开始添加订阅: {title_season}")
@@ -2037,6 +2064,9 @@ class EpisodeNoExist(_PluginBase):
                     tv_info = history.get("tv_no_exist_info", {})
                     last_air = tv_info.get("last_air_date")
                     if not last_air or last_air == "未知":
+                        # 如果是未知时间，且状态非 ALL_EXIST，则显示
+                        if str(history.get("exist_status")) != HistoryStatus.ALL_EXIST.value:
+                            historys_in_type.append(history)
                         continue
                     try:
                         last_air_date = datetime.datetime.strptime(str(last_air), "%Y-%m-%d")
